@@ -1,0 +1,422 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Lista de Estudiantes</title>
+
+  <!-- Biblioteca para exportar a Excel -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+  <!-- Iconos (para el ícono de micrófono) -->
+  <script src="https://kit.fontawesome.com/a076d05399.js" crossorigin="anonymous"></script>
+
+  <style>
+    * {
+      margin: 0; 
+      padding: 0; 
+      box-sizing: border-box;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Arial, sans-serif;
+      padding: 20px;
+      background-color: #f5f5f5;
+    }
+    .container {
+      max-width: 1200px;
+      margin: 0 auto;
+      background: white;
+      padding: 20px;
+      border-radius: 8px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+    }
+    h1 {
+      margin-bottom: 20px;
+      color: #333;
+    }
+    .input-field {
+      width: 100%;
+      padding: 12px;
+      font-size: 16px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      margin-bottom: 10px;
+    }
+    .button-group {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 15px;
+      flex-wrap: wrap;
+    }
+    .btn {
+      padding: 10px 20px;
+      border: none;
+      border-radius: 4px;
+      cursor: pointer;
+      font-size: 16px;
+      background-color: #007bff;
+      color: white;
+      flex-shrink: 0;
+    }
+    .btn:hover {
+      background-color: #0056b3;
+    }
+    .status-mic {
+      text-align: center;
+      padding: 10px;
+      border-radius: 4px;
+      background-color: #dc3545;
+      color: white;
+      margin-bottom: 20px;
+    }
+    .mic-active {
+      background-color: #28a745;
+    }
+    table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 20px;
+    }
+    th, td {
+      padding: 12px;
+      text-align: left;
+      border-bottom: 1px solid #ddd;
+    }
+    th {
+      background-color: #f8f9fa;
+      font-weight: bold;
+    }
+    footer {
+      text-align: center;
+      margin-top: 20px;
+      font-size: 14px;
+      color: #777;
+    }
+    @media (max-width: 768px) {
+      .button-group {
+        flex-direction: column;
+      }
+      .btn {
+        width: 100%;
+      }
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+  <h1>Lista de Estudiantes</h1>
+
+  <!-- Campo para ingreso manual o por voz (un solo input) -->
+  <input 
+    type="text" 
+    id="studentInput" 
+    class="input-field"
+    placeholder='Di o escribe: "Carlos Manuel Pérez Agudelo 11 3"'
+  />
+
+  <div class="button-group">
+    <!-- Botón para activar/desactivar micrófono -->
+    <button id="micButton" class="btn">
+      <i class="fas fa-microphone"></i> Activar micrófono
+    </button>
+
+    <!-- Botón para agregar estudiante (si se escribe manualmente) -->
+    <button class="btn" onclick="agregarEstudiante()">
+      Agregar Estudiante
+    </button>
+
+    <!-- Botón para exportar a Excel -->
+    <button class="btn" onclick="exportarExcel()">
+      Exportar a Excel
+    </button>
+    
+    <!-- Botón de Ayuda -->
+    <button class="btn" onclick="mostrarAyuda()">
+      Ayuda
+    </button>
+  </div>
+
+  <!-- Muestra el estado del micrófono -->
+  <div id="micStatus" class="status-mic">
+    Estado del micrófono: Inactivo
+  </div>
+
+  <!-- Tabla de estudiantes -->
+  <table>
+    <thead>
+      <tr>
+        <th>Primer Nombre</th>
+        <th>Segundo Nombre</th>
+        <th>Primer Apellido</th>
+        <th>Segundo Apellido</th>
+        <th>Grado</th>
+        <th>Acciones</th>
+      </tr>
+    </thead>
+    <tbody id="tablaEstudiantes"></tbody>
+  </table>
+</div>
+
+<!-- Footer con autor -->
+<footer>
+  Autor: Msc: Néstor Fabio Montoya Palacios
+</footer>
+
+<script>
+  // Array para almacenar los estudiantes
+  const estudiantes = [];
+
+  // Diccionario para convertir números escritos a dígitos
+  const numerosEscritos = {
+    'cero': '0',
+    'uno': '1',
+    'un': '1',
+    'una': '1',
+    'dos': '2',
+    'tres': '3',
+    'cuatro': '4',
+    'cinco': '5',
+    'seis': '6',
+    'siete': '7',
+    'ocho': '8',
+    'nueve': '9',
+    'nuebe': '9',  // a veces el reconocimiento falla
+    'diez': '10',
+    'decimo': '10',
+    'décimo': '10',
+    'once': '11',
+    'doce': '12'
+  };
+
+  // Referencias a elementos del DOM
+  let recognition = null;
+  let isListening = false;
+  const inputField = document.getElementById('studentInput');
+  const micButton = document.getElementById('micButton');
+  const micStatus = document.getElementById('micStatus');
+
+  // ----------------- BOTÓN DE AYUDA -----------------
+  function mostrarAyuda() {
+    const instrucciones = `
+Modo de uso:
+1. Para dictar: 
+   - Haz clic en "Activar micrófono" y permite el acceso.
+   - Pronuncia los datos en una sola frase, e.g.:
+     "Carlos Manuel Pérez Agudelo 11 3"
+   - El sistema separa: primer nombre, segundo nombre, etc.
+   - Comandos de voz:
+       - "borrar": limpia el campo de texto.
+       - "cancelar": detiene por completo el micrófono.
+       - "no": deja vacío el campo correspondiente (si ocupa primer, segundo nombre, etc.).
+
+2. Para ingresar manualmente:
+   - Escribe los datos en el campo de texto usando el mismo formato.
+   - Luego haz clic en "Agregar Estudiante".
+
+3. Para Exportar:
+   - Haz clic en "Exportar a Excel" para descargar el listado en un archivo XLSX.
+
+4. Para Eliminar:
+   - Haz clic en el botón "Eliminar" en la fila correspondiente de la tabla.
+`;
+    alert(instrucciones);
+  }
+
+  // ----------------- RECONOCIMIENTO DE VOZ -----------------
+  if (!('SpeechRecognition' in window) && !('webkitSpeechRecognition' in window)) {
+    console.warn('El navegador no soporta SpeechRecognition.');
+  }
+
+  micButton.addEventListener('click', toggleMicrophone);
+
+  async function toggleMicrophone() {
+    try {
+      if (!recognition) {
+        recognition = new (window.SpeechRecognition || window.webkitSpeechRecognition)();
+        setupRecognition();
+      }
+      if (!isListening) {
+        await startListening();
+      } else {
+        stopListening();
+      }
+    } catch (error) {
+      handleMicrophoneError(error);
+    }
+  }
+
+  function setupRecognition() {
+    recognition.lang = 'es-ES';
+    recognition.continuous = true;
+    recognition.interimResults = false;
+
+    recognition.onresult = handleSpeechResult;
+    recognition.onerror = handleSpeechError;
+    recognition.onend = handleSpeechEnd;
+  }
+
+  async function startListening() {
+    try {
+      await navigator.mediaDevices.getUserMedia({ audio: true });
+      recognition.start();
+      isListening = true;
+      updateMicUI(true);
+    } catch (error) {
+      handleMicrophoneError(error);
+    }
+  }
+
+  function stopListening() {
+    recognition.stop();
+    isListening = false;
+    updateMicUI(false);
+  }
+
+  function handleSpeechResult(event) {
+    const transcript = event.results[event.results.length - 1][0].transcript.trim().toLowerCase();
+
+    // Comandos:
+    if (transcript === 'borrar') {
+      inputField.value = '';
+      return;
+    }
+    if (transcript === 'cancelar') {
+      stopListening();
+      return;
+    }
+
+    // Si no es un comando, se muestra en el campo
+    inputField.value = transcript;
+    // Procesamos para ver si cumple con >=4 palabras
+    procesarEntrada(transcript);
+  }
+
+  function handleSpeechEnd() {
+    if (isListening && recognition) {
+      recognition.start();
+    }
+  }
+
+  function handleSpeechError(event) {
+    console.error('Error en reconocimiento de voz:', event.error);
+  }
+
+  function handleMicrophoneError(error) {
+    let message = 'Error al acceder al micrófono. ';
+    if (error.name === 'NotAllowedError') {
+      message += 'Por favor, permite el acceso al micrófono.';
+    } else if (error.name === 'NotFoundError') {
+      message += 'No se detectó ningún micrófono.';
+    } else {
+      message += 'Verifica la conexión y los permisos.';
+    }
+    micStatus.textContent = message;
+    micStatus.className = 'status-mic';
+  }
+
+  function updateMicUI(active) {
+    micButton.style.backgroundColor = active ? '#dc3545' : '#007bff';
+    micButton.innerHTML = `<i class="fas fa-microphone"></i> ${active ? 'Desactivar' : 'Activar'} micrófono`;
+    micStatus.textContent = `Estado del micrófono: ${active ? 'Activo' : 'Inactivo'}`;
+    micStatus.className = `status-mic ${active ? 'mic-active' : ''}`;
+  }
+
+  // ----------------- LÓGICA DE PARSEO Y TABLA -----------------
+  function agregarEstudiante() {
+    const texto = inputField.value.trim().toLowerCase();
+    if (!texto) {
+      alert('Por favor, di o escribe los datos del estudiante antes de agregar.');
+      return;
+    }
+    procesarEntrada(texto);
+  }
+
+  function procesarEntrada(texto) {
+    const palabras = texto.split(/\s+/).filter(Boolean);
+
+    if (palabras.length < 4) {
+      // Se requieren al menos 4 palabras: (ej. "Nombre1 Nombre2 Apellido1 Apellido2 ...")
+      console.log('Se necesitan al menos 4 palabras para extraer los nombres/apellidos.');
+      return;
+    }
+
+    // Tomamos las primeras 4 para primer nombre, segundo nombre, primer apellido, segundo apellido
+    const primerNombre    = (palabras[0] === 'no') ? '' : capitalizar(palabras[0]);
+    const segundoNombre   = (palabras[1] === 'no') ? '' : capitalizar(palabras[1]);
+    const primerApellido  = (palabras[2] === 'no') ? '' : capitalizar(palabras[2]);
+    const segundoApellido = (palabras[3] === 'no') ? '' : capitalizar(palabras[3]);
+
+    // El resto se considera grado
+    const resto = palabras.slice(4).join(' ');
+    const grado = normalizarGrado(resto);
+
+    // Agregar a la lista
+    estudiantes.push({ 
+      primerNombre, 
+      segundoNombre, 
+      primerApellido, 
+      segundoApellido, 
+      grado 
+    });
+    actualizarTabla();
+    inputField.value = '';
+  }
+
+  function normalizarGrado(texto) {
+    let tokens = texto.toLowerCase().split(/\s+/);
+    tokens = tokens.map(token => {
+      if (numerosEscritos[token] !== undefined) {
+        return numerosEscritos[token];
+      }
+      return token;
+    });
+    return tokens.join(' ');
+  }
+
+  function capitalizar(str) {
+    if (!str) return '';
+    return str.charAt(0).toUpperCase() + str.slice(1).toLowerCase();
+  }
+
+  function actualizarTabla() {
+    const tbody = document.getElementById('tablaEstudiantes');
+    tbody.innerHTML = '';
+
+    estudiantes.forEach((est, index) => {
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td>${est.primerNombre}</td>
+        <td>${est.segundoNombre}</td>
+        <td>${est.primerApellido}</td>
+        <td>${est.segundoApellido}</td>
+        <td>${est.grado}</td>
+        <td>
+          <button 
+            class="btn" 
+            style="background-color: #dc3545" 
+            onclick="eliminarEstudiante(${index})">
+            Eliminar
+          </button>
+        </td>
+      `;
+      tbody.appendChild(tr);
+    });
+  }
+
+  function eliminarEstudiante(index) {
+    estudiantes.splice(index, 1);
+    actualizarTabla();
+  }
+
+  function exportarExcel() {
+    if (estudiantes.length === 0) {
+      alert('No hay estudiantes para exportar');
+      return;
+    }
+    const wb = XLSX.utils.book_new();
+    const ws = XLSX.utils.json_to_sheet(estudiantes);
+    XLSX.utils.book_append_sheet(wb, ws, 'Estudiantes');
+    XLSX.writeFile(wb, 'lista_estudiantes.xlsx');
+  }
+</script>
+</body>
+</html>
